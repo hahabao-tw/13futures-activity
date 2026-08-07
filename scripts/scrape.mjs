@@ -19,6 +19,7 @@ import { applyOverride, loadSeeds } from './lib/seeds.mjs';
 import { TODAY, canonicalUrl, hash, statusOf } from './lib/util.mjs';
 
 const OUT_FILE = new URL('../site/data.json', import.meta.url);
+const STATUS_FILE = new URL('../site/status.json', import.meta.url);
 const STATUS_ORDER = { active: 0, upcoming: 1, unknown: 2, ended: 3 };
 const CHROME_IMAGE =
   /(logo|icon|btn|button|arrow|nav|menu|footer|header|bg[-_.]|sprite|avatar|qrcode|line|fb|share)/i;
@@ -175,10 +176,29 @@ const cached = await cacheBanners(merged);
 await closeBrowser();
 console.log(`\nbanner 圖 ${cached} 張已存入 site/banners/`);
 
+await mkdir(new URL('../site/', import.meta.url), { recursive: true });
+
+/**
+ * Split in two on purpose.
+ *
+ * data.json is the content, and it is only rewritten when a campaign actually
+ * changes, so its history stays readable — every commit to it means something.
+ *
+ * status.json records that a run happened at all, and is rewritten every time.
+ * Two things depend on that: the site can show "上次檢查" separately from
+ * "資料更新", so a stale board is distinguishable from a quiet month; and the
+ * repository gets a commit on every run, which is what keeps GitHub from
+ * disabling the schedule after 60 days of no activity.
+ */
+await writeFile(
+  STATUS_FILE,
+  JSON.stringify({ checkedAt: new Date().toISOString(), sources: await mergedSources() }) + '\n',
+  'utf8'
+);
+
 const payload = {
   generatedAt: new Date().toISOString(),
   brokers: BROKERS.map(({ id, name }) => ({ id, name })),
-  sources: report,
   campaigns: merged,
 };
 
@@ -186,7 +206,6 @@ const signature = signatureOf(merged);
 if (signature === signatureOf(previous.list)) {
   console.log('\n活動內容與上次相同，data.json 不變更。');
 } else {
-  await mkdir(new URL('../site/', import.meta.url), { recursive: true });
   await writeFile(OUT_FILE, JSON.stringify(payload) + '\n', 'utf8');
   console.log('\n偵測到異動，已更新 data.json。');
 }
@@ -379,6 +398,23 @@ function signatureOf(list) {
       .map((c) => [c.id, c.title, c.status, c.period?.start, c.period?.end, c.maxValue, c.pic])
       .sort((a, b) => a[0].localeCompare(b[0]))
   );
+}
+
+/**
+ * This run's per-broker results, laid over whatever the last run recorded. Only
+ * matters when crawling a subset by hand (`node scripts/scrape.mjs kgi`) — without
+ * it, status.json would claim the other twelve brokers no longer exist.
+ */
+async function mergedSources() {
+  let before = [];
+  try {
+    before = JSON.parse(await readFile(STATUS_FILE, 'utf8')).sources ?? [];
+  } catch {
+    before = [];
+  }
+  const now = new Map(before.map((s) => [s.id, s]));
+  for (const s of report) now.set(s.id, s);
+  return BROKERS.map((b) => now.get(b.id)).filter(Boolean);
 }
 
 async function readPrevious() {

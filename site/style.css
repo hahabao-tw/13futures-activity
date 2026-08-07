@@ -574,6 +574,16 @@ main {
   color: #7d6a4a;
 }
 
+.stale {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 6px;
+  color: #ffb4ad;
+  background: rgba(255, 90, 77, 0.1);
+  border: 1px solid rgba(255, 90, 77, 0.4);
+  font-size: 13px;
+}
+
 @media (max-width: 720px) {
   .tl-name,
   .tl-head .tl-name {

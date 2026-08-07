@@ -164,8 +164,23 @@ node scripts/inspect.mjs https://www.yuantafutures.com.tw/2026CME/ --text
 
 網站：<https://hahabao-tw.github.io/13futures-activity/>
 
-在**台灣時間每天 09:00 與 17:00** 各抓一次（活動的變動遠慢於公告，一天兩次夠了）。
-只有活動內容真的有異動才會回寫 `site/data.json` 與 `site/banners/` 並重新部署。
+在**台灣時間每天 09:17 與 17:17** 各抓一次（活動的變動遠慢於公告，一天兩次夠了）。
+刻意不排整點：GitHub 的排程本來就只是盡力而為，而整點是全球最擁擠的時段。
+
+寫出來的東西分兩份：
+
+| 檔案 | 何時改寫 | 用途 |
+| --- | --- | --- |
+| `site/data.json` | 只在活動真的有異動時 | 內容。每一筆 commit 都代表某家真的改了活動 |
+| `site/status.json` | 每次執行都改寫 | 這次跑了、跑到哪、哪幾家失敗 |
+
+分開有兩個好處。網站頁尾可以同時顯示「資料更新」與「上次檢查」——
+**看板一個月沒變**跟**抓取一個月前就掛了**，從外觀上完全一樣，只有後者能分辨；
+超過 36 小時沒成功抓取，頁面會直接跳紅字警告。
+
+第二個好處是每次執行都會產生一筆 commit，
+**GitHub 對「連續 60 天沒有活動就自動停用排程」的規則因此不會觸發**。
+commit 訊息會區分「更新活動資料」與「例行檢查，活動無異動」，方便從歷史裡挑出真正的變動。
 
 **換一個 repo 時，Pages 要先自己開一次。** workflow 裡沒有用 `configure-pages` 的
 `enablement: true`：建立 Pages 站台需要 repo 的 admin 權限，而 GITHUB_TOKEN 不論宣告
@@ -200,7 +215,8 @@ scripts/
   sources/tsfutures.mjs 台新：banner 沒有目的地，改讀活動訊息 API
 site/
   index.html app.js style.css
-  data.json             抓取結果（由 CI 回寫）
+  data.json             活動內容（由 CI 回寫，只在有異動時）
+  status.json           每次執行的時間與各家成敗（由 CI 回寫，每次都寫）
   banners/              各活動的 banner 縮圖（由 CI 回寫）
 seeds.yml               人工補充與覆寫
 ```

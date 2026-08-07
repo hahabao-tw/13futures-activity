@@ -2,13 +2,15 @@ name: 抓取活動並部署
 
 on:
   schedule:
-    # 台灣時間每天 09:00 與 17:00。活動的變動遠慢於公告，一天兩次就夠。
-    - cron: '0 1,9 * * *'
+    # 台灣時間每天 09:17 與 17:17。刻意不排整點：整點是全球最擁擠的時段，
+    # GitHub 的排程本來就只是盡力而為，錯開幾分鐘可以少等很多。
+    - cron: '17 1,9 * * *'
   workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
       - 'site/data.json'
+      - 'site/status.json'
       - 'site/banners/**'
 
 permissions:
@@ -54,27 +56,27 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if [ -z "$(git status --porcelain site/data.json site/banners)" ]; then
-            echo "活動內容無異動，略過部署。"
+          if [ -z "$(git status --porcelain site/data.json site/status.json site/banners)" ]; then
+            echo "完全無異動（連檢查時間都沒變？），略過部署。"
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # data.json and the cached banner images have to move together: a card
-          # points at a file under site/banners, so committing one without the
-          # other leaves broken images on the deployed page.
+          # data.json, status.json and the cached banner images have to move
+          # together: a card points at a file under site/banners, so committing one
+          # without the other leaves broken images on the deployed page.
           rm -rf "$RUNNER_TEMP/site"
           mkdir -p "$RUNNER_TEMP/site"
-          cp site/data.json "$RUNNER_TEMP/site/data.json"
+          cp site/data.json site/status.json "$RUNNER_TEMP/site/"
           cp -r site/banners "$RUNNER_TEMP/site/banners" 2>/dev/null || true
 
           for attempt in 1 2 3; do
             git fetch --depth=1 origin "$GITHUB_REF_NAME"
             git reset --hard FETCH_HEAD
-            cp "$RUNNER_TEMP/site/data.json" site/data.json
+            cp "$RUNNER_TEMP/site/data.json" "$RUNNER_TEMP/site/status.json" site/
             rm -rf site/banners
             cp -r "$RUNNER_TEMP/site/banners" site/banners 2>/dev/null || true
-            git add site/data.json site/banners
+            git add site/data.json site/status.json site/banners
 
             if git diff --staged --quiet; then
               echo "遠端已是相同內容，不需回寫。"
@@ -82,7 +84,14 @@ jobs:
               exit 0
             fi
 
-            git commit -m "chore: 更新活動資料 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
+            # The message says whether this run found anything, so the history can
+            # be skimmed for real changes among the routine check-ins.
+            if git diff --staged --name-only | grep -q 'site/data.json'; then
+              subject="chore: 更新活動資料"
+            else
+              subject="chore: 例行檢查，活動無異動"
+            fi
+            git commit -m "$subject $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
             if git push; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               exit 0

@@ -1,4 +1,12 @@
-const data = await fetch('data.json', { cache: 'no-cache' }).then((r) => r.json());
+const [data, status] = await Promise.all([
+  fetch('data.json', { cache: 'no-cache' }).then((r) => r.json()),
+  // Written on every run, unlike data.json. Lets the page say when it was last
+  // checked, not just when the contents last moved.
+  fetch('status.json', { cache: 'no-cache' })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null),
+]);
+const sources = status?.sources ?? data.sources ?? [];
 const TODAY = new Date().toISOString().slice(0, 10);
 
 /** One hue per broker, reused by the card border and the timeline bar. */
@@ -84,10 +92,29 @@ function renderCounts() {
   badge.textContent = missing;
   badge.style.display = missing ? '' : 'none';
 
-  const at = new Date(data.generatedAt);
-  document.getElementById('updated').textContent =
-    `資料更新：${at.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })}（台北時間）` +
-    `　來源：${data.sources.filter((s) => s.ok).length}/${data.sources.length} 家抓取成功`;
+  const stamp = (iso) =>
+    new Date(iso).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+
+  const foot = document.getElementById('updated');
+  foot.textContent =
+    `資料更新：${stamp(data.generatedAt)}（台北時間）` +
+    (status?.checkedAt ? `　上次檢查：${stamp(status.checkedAt)}` : '') +
+    `　來源：${sources.filter((s) => s.ok).length}/${sources.length} 家抓取成功`;
+
+  // The board looking unchanged for a month is normal; the crawler having stopped
+  // a month ago looks exactly the same from the outside. Only the check time can
+  // tell those apart, so say so when it goes stale.
+  const hoursSinceCheck = status?.checkedAt
+    ? (Date.now() - new Date(status.checkedAt).getTime()) / 3600000
+    : null;
+  if (hoursSinceCheck != null && hoursSinceCheck > 36) {
+    const warn = el(
+      'p',
+      'stale',
+      `⚠ 已經 ${Math.floor(hoursSinceCheck / 24)} 天沒有成功抓取，看板內容可能過期。`
+    );
+    foot.parentNode.insertBefore(warn, foot);
+  }
 }
 
 /* ---------- timeline ---------- */
@@ -197,7 +224,7 @@ function cards(list) {
     const h2 = el('h2', '', broker.name);
     head.append(h2);
     head.append(el('span', 'n', mine.length ? `${mine.length} 檔` : '—'));
-    const source = data.sources.find((s) => s.id === broker.id);
+    const source = sources.find((s) => s.id === broker.id);
     if (source && !source.ok) head.append(el('span', 'n', `⚠ 抓取失敗：${source.error ?? ''}`));
     block.append(head);
 
