@@ -95,8 +95,12 @@ jobs:
           echo "::error::連續三次都推不上去，可能有其他執行正在寫入。"
           exit 1
 
+      # enablement turns Pages on for the repo the first time this runs, so the
+      # only manual setup left is nothing.
       - uses: actions/configure-pages@v5
         if: steps.sync.outputs.changed == 'true' || github.event_name != 'schedule'
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         if: steps.sync.outputs.changed == 'true' || github.event_name != 'schedule'
         with:
