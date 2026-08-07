@@ -1,0 +1,18 @@
+{
+  "name": "futures-activity",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "futures broker campaign board",
+  "scripts": {
+    "scrape": "node scripts/scrape.mjs",
+    "serve": "node scripts/serve.mjs",
+    "test": "node scripts/test.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "iconv-lite": "^0.6.3",
+    "playwright": "^1.49.0",
+    "yaml": "^2.6.0"
+  }
+}

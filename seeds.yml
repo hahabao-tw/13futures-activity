@@ -1,0 +1,28 @@
+# 人工補充檔。三種用途，都以 url 為鍵。改完存檔就好，下次抓取自動生效。
+#
+# add       抓不到的活動（只發在 Facebook、需登入、官網沒掛連結）。
+#           填了 url 就會照一般流程去讀那頁；讀不到的欄位可以直接寫在這裡。
+# block     分類器一直放行但其實不是活動的網址。
+# override  真的讀錯、需要立刻壓過去時用。
+#
+# 網站上的「無法辨識」清單不會叫你來這裡回填 —— 那些活動辦法都在圖片裡，
+# 抄進來只會慢慢過期，點進原活動頁看比較準。
+
+add: []
+# - broker: kgi                       # 對應 scripts/sources/index.mjs 的 id
+#   url: https://event.kgi.com.tw/...
+#   title: 從 FB 看到的活動名稱        # 選填，讀得到就不用寫
+#   start: 2026-08-01                 # 選填
+#   end: 2026-12-31                   # 選填
+#   maxValue: 1700                    # 選填，最高獎勵金額（純數字）
+#   note: 僅發布於 Facebook
+
+override: []
+# - url: https://www.pfcf.com.tw/eventweb/xxx/
+#   start: 2026-07-01
+#   end: 2026-09-30
+#   maxValue: 30000
+#   periodText: 2026/07/01～09/30
+
+block: []
+# - https://www.example.com.tw/not-a-campaign

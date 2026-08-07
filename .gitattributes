@@ -1,0 +1,10 @@
+# The scrape job runs on Ubuntu and rewrites site/data.json every time it finds a
+# change. Without a fixed line ending, a Windows checkout and the CI checkout
+# disagree about the whole file and every run looks like a full rewrite.
+* text=auto eol=lf
+
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.gif binary
+*.webp binary

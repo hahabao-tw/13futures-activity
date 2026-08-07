@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>期貨商活動看板</title>
+    <meta name="description" content="彙整 13 家期貨商官網正在舉辦的交易活動與開戶優惠。" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎁</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-inner">
+        <h1>期貨商活動看板</h1>
+        <p class="lede">
+          13 家期貨商官網正在舉辦的交易活動與開戶優惠。banner 背後的活動頁自動追蹤，
+          <strong>活動辦法與獎勵請以各期貨商官網公告為準</strong>。
+        </p>
+        <div class="counts" id="counts"></div>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab is-on" data-view="timeline">時間軸</button>
+      <button class="tab" data-view="cards">卡片</button>
+      <button class="tab" data-view="pending">無法辨識<span class="pill" id="pending-count"></span></button>
+    </nav>
+
+    <section class="filters" id="filters">
+      <div class="filter-group" data-filter="status">
+        <span class="filter-label">狀態</span>
+        <button class="chip is-on" data-value="live">進行中 / 即將開始</button>
+        <button class="chip" data-value="all">全部</button>
+        <button class="chip" data-value="ended">已結束</button>
+      </div>
+      <div class="filter-group" data-filter="audience">
+        <span class="filter-label">對象</span>
+        <button class="chip is-on" data-value="all">不限</button>
+        <button class="chip" data-value="新戶">新戶可參加</button>
+      </div>
+      <div class="filter-group" data-filter="sort">
+        <span class="filter-label">排序</span>
+        <button class="chip is-on" data-value="end">依結束日</button>
+        <button class="chip" data-value="value">依最高獎勵</button>
+        <button class="chip" data-value="broker">依期貨商</button>
+      </div>
+    </section>
+
+    <main id="main"></main>
+
+    <footer class="foot">
+      <p id="updated"></p>
+      <p>
+        資料取自各期貨商官網公開頁面，由程式自動判讀，可能有誤判或遺漏；
+        僅發布於社群平台的活動不在收錄範圍。實際活動辦法、期間與獎勵，
+        以各期貨商官方公告為準。本站不提供投資建議。
+      </p>
+      <p class="warn">
+        期貨及選擇權交易具高財務槓桿特性，可能產生極大損失，交易前請審慎評估自身風險承受能力。
+      </p>
+    </footer>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>

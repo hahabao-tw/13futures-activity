@@ -1,0 +1,114 @@
+name: 抓取活動並部署
+
+on:
+  schedule:
+    # 台灣時間每天 09:00 與 17:00。活動的變動遠慢於公告，一天兩次就夠。
+    - cron: '0 1,9 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'site/data.json'
+      - 'site/banners/**'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: futures-activity
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Track the branch head rather than the triggering commit, so a re-run
+          # does not try to push on top of a stale SHA.
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Banner carousels are client-rendered almost everywhere, so the discovery
+      # pass needs a real browser. Only Chromium is used.
+      - run: npx playwright install --with-deps chromium
+
+      - name: 抓取各期貨商活動
+        run: npm run scrape
+
+      - name: 回寫 data.json
+        id: sync
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -z "$(git status --porcelain site/data.json site/banners)" ]; then
+            echo "活動內容無異動，略過部署。"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # data.json and the cached banner images have to move together: a card
+          # points at a file under site/banners, so committing one without the
+          # other leaves broken images on the deployed page.
+          rm -rf "$RUNNER_TEMP/site"
+          mkdir -p "$RUNNER_TEMP/site"
+          cp site/data.json "$RUNNER_TEMP/site/data.json"
+          cp -r site/banners "$RUNNER_TEMP/site/banners" 2>/dev/null || true
+
+          for attempt in 1 2 3; do
+            git fetch --depth=1 origin "$GITHUB_REF_NAME"
+            git reset --hard FETCH_HEAD
+            cp "$RUNNER_TEMP/site/data.json" site/data.json
+            rm -rf site/banners
+            cp -r "$RUNNER_TEMP/site/banners" site/banners 2>/dev/null || true
+            git add site/data.json site/banners
+
+            if git diff --staged --quiet; then
+              echo "遠端已是相同內容，不需回寫。"
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            git commit -m "chore: 更新活動資料 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M')"
+            if git push; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "推送被拒（第 ${attempt} 次），重新對齊後再試。"
+            sleep 5
+          done
+
+          echo "::error::連續三次都推不上去，可能有其他執行正在寫入。"
+          exit 1
+
+      - uses: actions/configure-pages@v5
+        if: steps.sync.outputs.changed == 'true' || github.event_name != 'schedule'
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.sync.outputs.changed == 'true' || github.event_name != 'schedule'
+        with:
+          path: site
+
+  deploy:
+    needs: scrape
+    if: needs.scrape.outputs.changed == 'true' || github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

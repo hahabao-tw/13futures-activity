@@ -1,0 +1,5 @@
+node_modules/
+# Crawl logs written by hand while debugging a broker.
+*.txt
+!requirements.txt
+*.log
