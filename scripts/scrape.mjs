@@ -1,6 +1,9 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { BROKERS } from './sources/index.mjs';
 import {
+  BROKER_BUDGET_MS,
+  CANDIDATE_TIMEOUT_MS,
+  GLOBAL_BUDGET_MS,
   KEEP_ENDED_DAYS,
   MAX_CANDIDATES_PER_BROKER,
   MAX_PER_BROKER,
@@ -11,7 +14,7 @@ import { closeBrowser, harvestPage, openBrowser } from './lib/browser.mjs';
 import { classify, confirm, preScreen } from './lib/classify.mjs';
 import { extract } from './lib/extract.mjs';
 import { readLanding } from './lib/landing.mjs';
-import { mapPool } from './lib/pool.mjs';
+import { mapPool, withTimeout } from './lib/pool.mjs';
 import { applyOverride, loadSeeds } from './lib/seeds.mjs';
 import { TODAY, canonicalUrl, hash, statusOf } from './lib/util.mjs';
 
@@ -31,9 +34,20 @@ await openBrowser();
 const report = [];
 const campaigns = [];
 
+const crawlDeadline = Date.now() + GLOBAL_BUDGET_MS;
+
 for (const broker of targets) {
   const started = Date.now();
   const result = { id: broker.id, name: broker.name, ok: true, error: null, found: 0, checked: 0 };
+  if (Date.now() > crawlDeadline) {
+    // Marked as a failure on purpose: merge() keeps a failed broker's previous
+    // campaigns instead of ageing them out, and the card shows ⚠.
+    result.ok = false;
+    result.error = '超出整體時間預算，本次未抓取';
+    console.log(`✗ ${broker.name}\t${result.error}`);
+    report.push(result);
+    continue;
+  }
   try {
     const candidates = await collect(broker);
     result.checked = candidates.length;
@@ -43,50 +57,22 @@ for (const broker of targets) {
       }
     }
 
+    // Two nested limits. Per candidate, so a slow page is skipped rather than
+    // waited on; per broker, so a site that is slow across the board still leaves
+    // time for the twelve after it.
+    const deadline = Math.min(Date.now() + BROKER_BUDGET_MS, crawlDeadline);
     const judged = await mapPool(candidates, 4, async (candidate) => {
-      let page = await readLanding(candidate.url);
-      if (page.kind !== 'page') return null;
-
-      // Brokers hide campaign links behind their own shorteners (cathaysec.tw/…,
-      // kgif.tw/…), so what a link is really pointing at is only known after the
-      // redirect. Screen the destination as well as the link.
-      if (page.url !== candidate.url && !preScreen({ ...candidate, url: page.url }, broker)) {
-        if (verbose) console.log(`    · 跳過 ${candidate.url} → ${page.url}  (轉址後不符)`);
+      if (Date.now() > deadline) {
+        result.skipped = (result.skipped ?? 0) + 1;
         return null;
       }
-
-      let verdict = classify(candidate, page);
-
-      // A client-rendered landing page can serve enough og: text to look ordinary
-      // over HTTP while keeping its terms behind JavaScript. Re-read in a browser
-      // when the page sits on an event URL and the cheap read found nothing.
-      if (!verdict.ok && candidate.hints?.onEventUrl && page.via === 'http' && page.text.length < 2000) {
-        page = await readLanding(candidate.url, { mode: 'browser' });
-        if (page.kind === 'page') verdict = classify(candidate, page);
-      }
-      if (verbose && !verdict.ok) {
-        console.log(`    · 跳過 ${candidate.url}  (${verdict.reason})`);
-      }
-      if (!verdict.ok) return null;
-
-      let fields = extract(page, candidate);
-      if (fields.missing.length && page.via === 'http') {
-        const rendered = await readLanding(candidate.url, { mode: 'browser' });
-        if (rendered.kind === 'page' && rendered.text.length > page.text.length) {
-          const better = extract(rendered, candidate);
-          if (better.missing.length < fields.missing.length) {
-            page = rendered;
-            fields = better;
-          }
+      return withTimeout(inspectCandidate(candidate, broker), CANDIDATE_TIMEOUT_MS, candidate.url).catch(
+        (err) => {
+          result.timedOut = (result.timedOut ?? 0) + 1;
+          if (verbose) console.log(`    · 略過 ${candidate.url}  (${err.message})`);
+          return null;
         }
-      }
-
-      verdict = confirm(verdict, fields, candidate, page);
-      if (!verdict.ok) {
-        if (verbose) console.log(`    · 跳過 ${candidate.url}  (${verdict.reason})`);
-        return null;
-      }
-      return { candidate, page, verdict, fields };
+      );
     });
 
     for (const row of judged) {
@@ -94,10 +80,14 @@ for (const broker of targets) {
       campaigns.push(toCampaign(broker, row));
     }
     result.found = campaigns.filter((c) => c.broker === broker.id).length;
+    const notes = [
+      result.timedOut ? `逾時 ${result.timedOut}` : null,
+      result.skipped ? `超出時間預算未檢查 ${result.skipped}` : null,
+    ].filter(Boolean);
     console.log(
       `✓ ${broker.name.padEnd(10)} 候選 ${String(result.checked).padStart(3)} → 活動 ${String(
         result.found
-      ).padStart(2)}\t${Date.now() - started}ms`
+      ).padStart(2)}\t${Date.now() - started}ms${notes.length ? `\t(${notes.join('、')})` : ''}`
     );
   } catch (err) {
     result.ok = false;
@@ -105,6 +95,51 @@ for (const broker of targets) {
     console.log(`✗ ${broker.name}\t${result.error}`);
   }
   report.push(result);
+}
+
+/** Read one candidate's landing page and decide whether it is a campaign. */
+async function inspectCandidate(candidate, broker) {
+  let page = await readLanding(candidate.url);
+  if (page.kind !== 'page') return null;
+
+  // Brokers hide campaign links behind their own shorteners (cathaysec.tw/…,
+  // kgif.tw/…), so what a link is really pointing at is only known after the
+  // redirect. Screen the destination as well as the link.
+  if (page.url !== candidate.url && !preScreen({ ...candidate, url: page.url }, broker)) {
+    if (verbose) console.log(`    · 跳過 ${candidate.url} → ${page.url}  (轉址後不符)`);
+    return null;
+  }
+
+  let verdict = classify(candidate, page);
+
+  // A client-rendered landing page can serve enough og: text to look ordinary
+  // over HTTP while keeping its terms behind JavaScript. Re-read in a browser
+  // when the page sits on an event URL and the cheap read found nothing.
+  if (!verdict.ok && candidate.hints?.onEventUrl && page.via === 'http' && page.text.length < 2000) {
+    page = await readLanding(candidate.url, { mode: 'browser' });
+    if (page.kind === 'page') verdict = classify(candidate, page);
+  }
+  if (verbose && !verdict.ok) console.log(`    · 跳過 ${candidate.url}  (${verdict.reason})`);
+  if (!verdict.ok) return null;
+
+  let fields = extract(page, candidate);
+  if (fields.missing.length && page.via === 'http') {
+    const rendered = await readLanding(candidate.url, { mode: 'browser' });
+    if (rendered.kind === 'page' && rendered.text.length > page.text.length) {
+      const better = extract(rendered, candidate);
+      if (better.missing.length < fields.missing.length) {
+        page = rendered;
+        fields = better;
+      }
+    }
+  }
+
+  verdict = confirm(verdict, fields, candidate, page);
+  if (!verdict.ok) {
+    if (verbose) console.log(`    · 跳過 ${candidate.url}  (${verdict.reason})`);
+    return null;
+  }
+  return { candidate, page, verdict, fields };
 }
 
 // Seeded campaigns go through the same reading and scoring as harvested ones, so a

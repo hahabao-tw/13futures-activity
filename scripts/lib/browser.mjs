@@ -28,12 +28,33 @@ export async function closeBrowser() {
   context = undefined;
 }
 
-async function withPage(fn) {
+/**
+ * Every page interaction runs under a hard deadline.
+ *
+ * Playwright's own timeouts cover navigation and actions but *not* page.evaluate,
+ * and that is the gap that matters here: the harvester and the landing reader both
+ * do their real work inside evaluate. One of 統一's pages stalled there and the
+ * whole crawl sat on it for 23 minutes until the CI job was killed — 12 brokers
+ * lost to one page.
+ *
+ * Closing the page is what actually unblocks a stuck evaluate, so the timeout has
+ * to be here, wrapped around the body, rather than inside each caller.
+ */
+const PAGE_BUDGET_MS = 75_000;
+
+async function withPage(fn, budget = PAGE_BUDGET_MS) {
   await openBrowser();
   const page = await context.newPage();
+  let timer;
   try {
-    return await fn(page);
+    return await Promise.race([
+      fn(page),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`頁面處理超過 ${budget / 1000}s`)), budget);
+      }),
+    ]);
   } finally {
+    clearTimeout(timer);
     await page.close().catch(() => {});
   }
 }

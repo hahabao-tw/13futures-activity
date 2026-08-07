@@ -17,3 +17,19 @@ export const MAX_CANDIDATES_PER_BROKER = 45;
  * Two consecutive misses avoids ending a campaign over one flaky crawl.
  */
 export const MISSES_BEFORE_ENDED = 2;
+
+/**
+ * Time limits, so one unresponsive page cannot take the run down with it.
+ * A candidate normally resolves in 1–8 seconds; a broker in 15–80.
+ */
+export const CANDIDATE_TIMEOUT_MS = 90_000;
+export const BROKER_BUDGET_MS = 300_000;
+
+/**
+ * Ceiling for the whole crawl. Thirteen brokers each burning their own budget
+ * would add up to more than the CI job is allowed to run, and a job killed at the
+ * timeout writes nothing at all — the previous run's data survives, but the ⚠ that
+ * says "these brokers were not checked" never gets recorded. Stopping early and
+ * marking the rest as unchecked keeps that visible.
+ */
+export const GLOBAL_BUDGET_MS = 20 * 60_000;

@@ -182,7 +182,7 @@ gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
 
 ```
 scripts/
-  config.mjs            候選上限、已結束活動保留天數、連續幾次抓不到才判定結束
+  config.mjs            候選上限、時間預算、已結束活動保留天數、連續幾次抓不到才判定結束
   scrape.mjs            主控：發現 → 判定 → 抽取 → 與上次合併
   inspect.mjs           單一網址除錯：讀到什麼、怎麼評分、抽出什麼
   serve.mjs             本機預覽用的靜態伺服器
@@ -219,6 +219,22 @@ node scripts/scrape.mjs <該家id> --verbose
 
 每次抓取結尾的 **⚠ 區塊**是最該看的一段：列出「仍掛在首頁輪播、卻判定已結束」的活動。
 這是期間讀錯唯一會自己冒出來的訊號，出現就代表有東西要查。
+
+### 時間預算
+
+三層，全部在 `config.mjs`。理由是實際發生過一次：統一的某個頁面卡在
+`page.evaluate` 裡不動，Playwright 自己的逾時管導覽與操作、**但不管 evaluate**，
+於是整輪抓取在那一頁上耗掉 23 分鐘，其餘 12 家全部陪葬。
+
+| 層級 | 預設 | 超過時 |
+| --- | --- | --- |
+| 單一頁面 `PAGE_BUDGET_MS` | 75 秒 | 關掉分頁（關頁面才真的解得開卡住的 evaluate） |
+| 單一候選 `CANDIDATE_TIMEOUT_MS` | 90 秒 | 略過這則，該家繼續 |
+| 單一期貨商 `BROKER_BUDGET_MS` | 5 分鐘 | 剩下的候選不檢查，換下一家 |
+| 整輪 `GLOBAL_BUDGET_MS` | 20 分鐘 | 未抓的期貨商標為失敗，沿用上次資料並顯示 ⚠ |
+
+最後一層是為了配合 CI 的 `timeout-minutes: 30`：job 被逾時砍掉的話什麼都不會寫，
+連「這幾家沒抓到」都留不下來；提早收手才記得住。
 
 ## 免責
 

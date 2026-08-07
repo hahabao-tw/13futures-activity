@@ -1,3 +1,18 @@
+/**
+ * Rejects if `promise` has not settled in time. The page-level budget in
+ * browser.mjs covers a single browser interaction; this covers a whole candidate,
+ * which may involve several of them plus HTTP fetches.
+ */
+export function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} 超過 ${Math.round(ms / 1000)}s 未完成`)), ms);
+    }),
+  ]);
+}
+
 /** Runs `worker` over `items` with a fixed number of slots in flight. */
 export async function mapPool(items, limit, worker) {
   const results = new Array(items.length);
