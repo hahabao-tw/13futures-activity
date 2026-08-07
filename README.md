@@ -162,9 +162,19 @@ node scripts/inspect.mjs https://www.yuantafutures.com.tw/2026CME/ --text
 
 ## 部署設定
 
-推上 GitHub 後到 **Settings → Pages**，把 Source 設成 **GitHub Actions**。
-之後在**台灣時間每天 09:00 與 17:00** 各抓一次（活動的變動遠慢於公告，一天兩次夠了）。
-只有活動內容真的有異動才會回寫 `site/data.json` 並重新部署。
+網站：<https://hahabao-tw.github.io/13futures-activity/>
+
+在**台灣時間每天 09:00 與 17:00** 各抓一次（活動的變動遠慢於公告，一天兩次夠了）。
+只有活動內容真的有異動才會回寫 `site/data.json` 與 `site/banners/` 並重新部署。
+
+**換一個 repo 時，Pages 要先自己開一次。** workflow 裡沒有用 `configure-pages` 的
+`enablement: true`：建立 Pages 站台需要 repo 的 admin 權限，而 GITHUB_TOKEN 不論宣告
+多少 permissions 都沒有，只會得到 `Resource not accessible by integration`。
+到 **Settings → Pages** 把 Source 設成 **GitHub Actions**，或跑一次：
+
+```bash
+gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
+```
 
 > GitHub Pages 上的內容是公開的。這裡只有各期貨商官網本來就公開的活動標題、期間與連結。
 
