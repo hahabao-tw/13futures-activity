@@ -200,7 +200,7 @@ export async function harvestPage(url, { wait = 3500, scroll = true } = {}) {
  * several hundred KB each; the cards render them about 400px wide, and the repo
  * has to carry every one of them for as long as the campaign runs.
  */
-export async function shrinkImage(buffer, mime, maxWidth = 760) {
+export async function shrinkImage(buffer, mime, maxWidth = 640) {
   const source = `data:${mime};base64,${buffer.toString('base64')}`;
   return withPage(async (page) => {
     await page.setContent('<body style="margin:0">');
@@ -213,18 +213,21 @@ export async function shrinkImage(buffer, mime, maxWidth = 760) {
           img.onerror = () => reject(new Error('decode failed'));
           img.src = src;
         });
-        if (img.naturalWidth <= width) return null;
-        const scale = width / img.naturalWidth;
+        const scale = Math.min(1, width / img.naturalWidth);
         const canvas = document.createElement('canvas');
-        canvas.width = width;
+        canvas.width = Math.round(img.naturalWidth * scale);
         canvas.height = Math.round(img.naturalHeight * scale);
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', 0.82);
+        // WebP over JPEG: same visual quality at roughly half the bytes, and every
+        // browser that can run this page has supported it for years.
+        const webp = canvas.toDataURL('image/webp', 0.8);
+        if (webp.startsWith('data:image/webp')) return { data: webp, type: 'webp' };
+        return { data: canvas.toDataURL('image/jpeg', 0.8), type: 'jpg' };
       },
       [source, maxWidth]
     );
     if (!out) return null;
-    return Buffer.from(out.slice(out.indexOf(',') + 1), 'base64');
+    return { buffer: Buffer.from(out.data.slice(out.data.indexOf(',') + 1), 'base64'), ext: out.type };
   });
 }
 

@@ -12,19 +12,59 @@ const TODAY = new Date().toISOString().slice(0, 10);
 /** One hue per broker, reused by the card border and the timeline bar. */
 const HUES = [4, 22, 42, 62, 96, 132, 166, 190, 208, 232, 258, 286, 320];
 const hueOf = new Map(data.brokers.map((b, i) => [b.id, HUES[i % HUES.length]]));
-const colour = (id, l = 58, s = 62) => `hsl(${hueOf.get(id) ?? 200} ${s}% ${l}%)`;
+// Timeline bars carry white text, so the fill has to stay dark enough for it at
+// every hue — yellows go muddy long before blues do.
+const colour = (id, l = 40, s = 64) => `hsl(${hueOf.get(id) ?? 200} ${s}% ${l}%)`;
 const nameOf = new Map(data.brokers.map((b) => [b.id, b.name]));
 
 const state = { view: 'timeline', status: 'live', audience: 'all', sort: 'end' };
-
 const main = document.getElementById('main');
+const root = document.documentElement;
+
+/* ---------- appearance ---------- */
+
+const SIZE_NAMES = ['最小', '小', '中', '大', '最大'];
+
+function paintTheme() {
+  document.getElementById('theme').textContent = root.dataset.theme === 'dark' ? '☀' : '☾';
+}
+
+function paintSize() {
+  const step = Number(root.dataset.size ?? 2);
+  document.getElementById('size-now').textContent = SIZE_NAMES[step];
+  for (const b of document.querySelectorAll('[data-size-step]')) {
+    const next = step + Number(b.dataset.sizeStep);
+    b.disabled = next < 0 || next > 4;
+  }
+}
+
+document.getElementById('theme').addEventListener('click', () => {
+  const dark = root.dataset.theme !== 'dark';
+  root.dataset.theme = dark ? 'dark' : 'light';
+  localStorage.setItem('theme', root.dataset.theme);
+  paintTheme();
+});
+
+for (const button of document.querySelectorAll('[data-size-step]')) {
+  button.addEventListener('click', () => {
+    const next = Number(root.dataset.size ?? 2) + Number(button.dataset.sizeStep);
+    if (next < 0 || next > 4) return;
+    root.dataset.size = String(next);
+    localStorage.setItem('size', String(next));
+    paintSize();
+  });
+}
+
+paintTheme();
+paintSize();
+
+/* ---------- controls ---------- */
 
 document.getElementById('tabs').addEventListener('click', (e) => {
   const tab = e.target.closest('.tab');
   if (!tab) return;
   state.view = tab.dataset.view;
   for (const t of document.querySelectorAll('.tab')) t.classList.toggle('is-on', t === tab);
-  document.getElementById('filters').style.display = state.view === 'pending' ? 'none' : '';
   render();
 });
 
@@ -43,7 +83,7 @@ render();
 function visible() {
   return data.campaigns
     .filter((c) => {
-      if (state.status === 'live') return c.status === 'active' || c.status === 'upcoming' || c.status === 'unknown';
+      if (state.status === 'live') return c.status !== 'ended';
       if (state.status === 'ended') return c.status === 'ended';
       return true;
     })
@@ -70,9 +110,7 @@ function sorter(a, b) {
 
 function render() {
   main.innerHTML = '';
-  if (state.view === 'timeline') main.append(timeline(visible()));
-  else if (state.view === 'cards') main.append(cards(visible()));
-  else main.append(pending());
+  main.append(state.view === 'timeline' ? timeline(visible()) : cards(visible()));
 }
 
 function renderCounts() {
@@ -87,11 +125,6 @@ function renderCounts() {
     .map(([cls, value, label]) => `<div class="count ${cls}"><b>${value}</b><span>${label}</span></div>`)
     .join('');
 
-  const missing = data.campaigns.filter((c) => c.status !== 'ended' && (c.missing ?? []).length).length;
-  const badge = document.getElementById('pending-count');
-  badge.textContent = missing;
-  badge.style.display = missing ? '' : 'none';
-
   const stamp = (iso) =>
     new Date(iso).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
 
@@ -103,16 +136,11 @@ function renderCounts() {
 
   // The board looking unchanged for a month is normal; the crawler having stopped
   // a month ago looks exactly the same from the outside. Only the check time can
-  // tell those apart, so say so when it goes stale.
-  const hoursSinceCheck = status?.checkedAt
-    ? (Date.now() - new Date(status.checkedAt).getTime()) / 3600000
-    : null;
-  if (hoursSinceCheck != null && hoursSinceCheck > 36) {
-    const warn = el(
-      'p',
-      'stale',
-      `⚠ 已經 ${Math.floor(hoursSinceCheck / 24)} 天沒有成功抓取，看板內容可能過期。`
-    );
+  // tell those apart, so say so when it goes stale. Threshold allows for a
+  // weekend: the crawl only runs on weekdays.
+  const hours = status?.checkedAt ? (Date.now() - new Date(status.checkedAt).getTime()) / 3600000 : null;
+  if (hours != null && hours > 96) {
+    const warn = el('p', 'stale', `⚠ 已經 ${Math.floor(hours / 24)} 天沒有成功抓取，看板內容可能過期。`);
     foot.parentNode.insertBefore(warn, foot);
   }
 }
@@ -167,7 +195,7 @@ function timeline(list) {
       const bar = el('div', `tl-bar ${c.status}`);
       bar.style.left = `${pos(start)}%`;
       bar.style.width = `${Math.max(pos(end) - pos(start), 1.2)}%`;
-      bar.style.background = colour(c.broker);
+      bar.style.setProperty('--hue', hueOf.get(c.broker) ?? 200);
       bar.title = `${c.period.start ?? '？'} ～ ${c.period.end ?? '？'}`;
       bar.textContent = c.maxValue ? `最高 ${money(c.maxValue)}` : '';
       track.append(bar);
@@ -176,7 +204,7 @@ function timeline(list) {
     }
 
     const todayLine = el('div', 'tl-today');
-    todayLine.style.left = `calc(260px + (100% - 260px) * ${pos(TODAY) / 100})`;
+    todayLine.style.left = `calc(15rem + (100% - 15rem) * ${pos(TODAY) / 100})`;
     body.append(todayLine);
     grid.append(body);
     scroll.append(grid);
@@ -184,12 +212,13 @@ function timeline(list) {
   }
 
   if (undated.length) {
-    const note = el(
-      'div',
-      'empty',
-      `另有 ${undated.length} 檔未標示活動期間（活動辦法多以圖片呈現，無法自動判讀），請見「卡片」或「待補清單」。`
+    wrap.append(
+      el(
+        'div',
+        'empty',
+        `另有 ${undated.length} 檔未標示活動期間（活動辦法多以圖片呈現，無法自動判讀），請見「卡片」。`
+      )
     );
-    wrap.append(note);
   }
   return wrap;
 }
@@ -208,7 +237,6 @@ function cards(list) {
       return frag;
     }
     const grid = el('div', 'grid');
-    grid.style.marginTop = '20px';
     for (const c of list) grid.append(card(c, true));
     frag.append(grid);
     return frag;
@@ -220,10 +248,7 @@ function cards(list) {
     const head = el('div', 'broker-head');
     const dot = el('span', 'dot');
     dot.style.background = colour(broker.id);
-    head.append(dot);
-    const h2 = el('h2', '', broker.name);
-    head.append(h2);
-    head.append(el('span', 'n', mine.length ? `${mine.length} 檔` : '—'));
+    head.append(dot, el('h2', '', broker.name), el('span', 'n', mine.length ? `${mine.length} 檔` : '—'));
     const source = sources.find((s) => s.id === broker.id);
     if (source && !source.ok) head.append(el('span', 'n', `⚠ 抓取失敗：${source.error ?? ''}`));
     block.append(head);
@@ -243,14 +268,14 @@ function cards(list) {
 const STATUS_TEXT = { active: '進行中', upcoming: '即將開始', ended: '已結束', unknown: '期間未知' };
 
 function card(c, withBroker = false) {
-  const box = el('div', 'card');
-  box.style.borderTopColor = colour(c.broker);
+  const box = el('article', 'card');
 
   if (c.pic) {
     const img = el('img', 'card-pic');
     img.src = c.pic;
     img.alt = '';
     img.loading = 'lazy';
+    img.decoding = 'async';
     img.referrerPolicy = 'no-referrer';
     img.addEventListener('error', () => img.remove());
     box.append(img);
@@ -264,8 +289,9 @@ function card(c, withBroker = false) {
   const meta = el('div', 'meta');
   if (withBroker) {
     const who = el('span', 'tag broker', nameOf.get(c.broker) ?? c.broker);
-    who.style.borderColor = colour(c.broker, 40, 45);
-    who.style.color = colour(c.broker, 72);
+    // Only the hue crosses over; the stylesheet decides how light it should be,
+    // because that answer differs between the two themes.
+    who.style.setProperty('--hue', hueOf.get(c.broker) ?? 200);
     meta.append(who);
   }
   meta.append(el('span', `tag status-${c.status}`, STATUS_TEXT[c.status] ?? c.status));
@@ -275,14 +301,10 @@ function card(c, withBroker = false) {
   if (c.kind === 'course') meta.append(el('span', 'tag', '課程講座'));
   body.append(meta);
 
-  const period = el('div', 'period');
-  if (c.period?.start || c.period?.end) {
-    period.textContent = `${c.period.start ?? '？'} ～ ${c.period.end ?? '？'}`;
-    if (c.period.raw) period.append(el('span', 'raw', `　${c.period.raw}`));
-  } else {
-    period.textContent = '活動期間未標示';
-  }
-  body.append(period);
+  // One line, not two. The broker's own wording is the more useful of the pair —
+  // it is what the campaign page says — so the normalised ISO range only appears
+  // when there is no original wording to show.
+  body.append(el('div', 'period', periodText(c)));
 
   if (c.suspect) {
     body.append(
@@ -312,16 +334,9 @@ function card(c, withBroker = false) {
 
   const foot = el('div', 'card-foot');
   foot.append(
-    el(
-      'span',
-      '',
-      [
-        c.manual ? '人工補登' : c.source === 'feed' ? '活動訊息' : 'banner',
-        c.confidence === 'low' ? '低信心' : '',
-      ]
-        .filter(Boolean)
-        .join('・')
-    )
+    el('span', '', [c.manual ? '人工補登' : c.source === 'feed' ? '活動訊息' : 'banner', c.confidence === 'low' ? '低信心' : '']
+      .filter(Boolean)
+      .join('・'))
   );
   const link = el('a', '', '前往活動頁 →');
   link.href = c.url;
@@ -334,35 +349,10 @@ function card(c, withBroker = false) {
   return box;
 }
 
-/* ---------- pending ---------- */
-
-/**
- * Campaigns that were found but could not be read. Deliberately read-only: the
- * page states what is unreadable and links out, and judging it is the reader's
- * job on the broker's own site.
- */
-function pending() {
-  const frag = document.createDocumentFragment();
-  const list = data.campaigns.filter((c) => c.status !== 'ended' && (c.missing ?? []).length);
-
-  frag.append(
-    el(
-      'p',
-      'pending-intro',
-      '這些活動確實存在，但活動期間或獎勵金額做在圖片裡，程式讀不出來。' +
-        '點進去看原始活動頁，實際辦法以該頁為準。'
-    )
-  );
-
-  if (!list.length) {
-    frag.append(el('div', 'empty', '目前沒有無法辨識的活動。'));
-    return frag;
-  }
-
-  const grid = el('div', 'grid');
-  for (const c of list) grid.append(card(c, true));
-  frag.append(grid);
-  return frag;
+function periodText(c) {
+  if (c.period?.raw) return c.period.raw;
+  if (c.period?.start || c.period?.end) return `${c.period.start ?? '？'} ～ ${c.period.end ?? '？'}`;
+  return '活動期間未標示';
 }
 
 /* ---------- helpers ---------- */
@@ -412,7 +402,9 @@ function monthsBetween(from, to) {
   const cursor = new Date(from + 'T00:00:00Z');
   const last = new Date(to + 'T00:00:00Z');
   while (cursor <= last) {
-    out.push({ label: `${cursor.getUTCMonth() + 1}月` + (cursor.getUTCMonth() === 0 ? ` ${cursor.getUTCFullYear()}` : '') });
+    out.push({
+      label: `${cursor.getUTCMonth() + 1}月` + (cursor.getUTCMonth() === 0 ? ` ${cursor.getUTCFullYear()}` : ''),
+    });
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
   return out;
