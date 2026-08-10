@@ -225,22 +225,17 @@ function timeline(list) {
 
 /* ---------- cards ---------- */
 
+/**
+ * Always grouped by broker, and the brokers always run in 筆劃 order — the same
+ * order the 公告看板 uses, so the two boards read the same way. `data.brokers`
+ * arrives already sorted, so following that array is the whole implementation.
+ *
+ * The sort control still applies, but within each broker's block rather than
+ * across the page: someone comparing campaigns wants one broker's offers side by
+ * side, not the highest reward from thirteen different companies interleaved.
+ */
 function cards(list) {
   const frag = document.createDocumentFragment();
-
-  // Grouping by broker and sorting by reward are mutually exclusive: inside a
-  // broker's own block there is rarely more than one campaign, so the sort control
-  // would appear to do nothing. Group only when the sort actually asks for it.
-  if (state.sort !== 'broker') {
-    if (!list.length) {
-      frag.append(el('div', 'empty', '目前沒有符合條件的活動。'));
-      return frag;
-    }
-    const grid = el('div', 'grid');
-    for (const c of list) grid.append(card(c, true));
-    frag.append(grid);
-    return frag;
-  }
 
   for (const broker of data.brokers) {
     const mine = list.filter((c) => c.broker === broker.id);
@@ -349,9 +344,20 @@ function card(c, withBroker = false) {
   return box;
 }
 
+const HAS_LABEL = /^(活動|報名|抽獎|競賽|任務|贈獎)(期間|時間|日期|起訖)/;
+
+/**
+ * The stored `raw` is whatever the campaign page actually wrote, and some pages
+ * state the dates without ever labelling them ("2026/7/1 至 2026/9/30"). On a card
+ * a bare date range is ambiguous, so the label is added here rather than in the
+ * extractor — data.json keeps the page's own wording.
+ */
 function periodText(c) {
-  if (c.period?.raw) return c.period.raw;
-  if (c.period?.start || c.period?.end) return `${c.period.start ?? '？'} ～ ${c.period.end ?? '？'}`;
+  const raw = c.period?.raw;
+  if (raw) return HAS_LABEL.test(raw) ? raw : `活動期間 ${raw}`;
+  if (c.period?.start || c.period?.end) {
+    return `活動期間 ${c.period.start ?? '？'} ～ ${c.period.end ?? '？'}`;
+  }
   return '活動期間未標示';
 }
 

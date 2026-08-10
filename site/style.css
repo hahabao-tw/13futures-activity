@@ -36,7 +36,13 @@
   --ink-3: #67717d;
 
   --live: #07734a;
+  --live-rgb: 7, 115, 74;
   --live-soft: rgba(10, 138, 85, 0.12);
+  /*
+   * The chip's tint breathes between --live-soft and --live-mid, so the *brightest*
+   * moment is what has to clear 4.5:1 against the label — not the resting colour.
+   */
+  --live-mid: rgba(10, 138, 85, 0.18);
   --soon: #8f5f08;
   --soon-soft: rgba(224, 147, 13, 0.16);
 
@@ -63,7 +69,9 @@
   --ink-3: #8593a2;
 
   --live: #2fcb8b;
+  --live-rgb: 47, 203, 139;
   --live-soft: rgba(47, 203, 139, 0.14);
+  --live-mid: rgba(47, 203, 139, 0.22);
   --soon: #f0ad2c;
   --soon-soft: rgba(240, 173, 44, 0.16);
 
@@ -640,9 +648,14 @@ main {
 }
 
 /*
- * The live badge breathes. It is the one thing on a card that answers the
- * question people actually arrive with — can I still join this? — so it gets the
- * only motion on the page, and it stops for anyone who asked for less of it.
+ * The live badge is the one thing on a card that answers the question people
+ * arrive with — can I still join this? — so it gets the only motion on the page.
+ *
+ * A dot fading in and out was too easy to miss: opacity alone barely registers in
+ * peripheral vision. Three things move together instead — the dot pulses, a ring
+ * pings outward from it, and the chip's own tint breathes — because expanding
+ * shapes are what actually catch the eye. All of it stops for anyone who asked
+ * their system for less motion.
  */
 .tag.status-active {
   color: var(--live);
@@ -651,30 +664,45 @@ main {
   font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.4rem;
+  animation: live-chip 1.6s ease-in-out infinite;
 }
 
 .tag.status-active::before {
   content: '';
-  width: 0.42rem;
-  height: 0.42rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 50%;
   background: var(--live);
-  animation: breathe 1.8s ease-in-out infinite;
+  animation: live-ping 1.6s cubic-bezier(0.3, 0, 0.2, 1) infinite;
 }
 
-@keyframes breathe {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 var(--live-soft);
+@keyframes live-ping {
+  0% {
+    transform: scale(0.82);
+    box-shadow: 0 0 0 0 rgba(var(--live-rgb), 0.75);
   }
-  50% {
-    opacity: 0.45;
-    box-shadow: 0 0 0 0.3rem transparent;
+  60% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 0.5rem rgba(var(--live-rgb), 0);
+  }
+  100% {
+    transform: scale(0.82);
+    box-shadow: 0 0 0 0 rgba(var(--live-rgb), 0);
+  }
+}
+
+@keyframes live-chip {
+  0%, 100% {
+    background: var(--live-soft);
+  }
+  55% {
+    background: var(--live-mid);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tag.status-active,
   .tag.status-active::before {
     animation: none;
   }
